@@ -594,3 +594,271 @@ src/instr/instr_private.hpp:  explicit CpuTIData(const std::string&); // disallo
 argh actually no, we'll need to investigate more.
 
 but tomorrow!
+
+* <2023-10-17 Tue>
+
+ok
+
+so the class for the smpi files are available here: src/smpi/include/smpi_file.hpp
+
+I added the name of the file to the trace, and renamed the "IO - write" to "io-write" directly in simgrid (same for read)
+
+#+BEGIN_EXAMPLE diff
+diff --git a/src/smpi/bindings/smpi_pmpi_file.cpp b/src/smpi/bindings/smpi_pmpi_file.cpp
+index e8dfd51da4..4a519d4795 100644
+--- a/src/smpi/bindings/smpi_pmpi_file.cpp
++++ b/src/smpi/bindings/smpi_pmpi_file.cpp
+@@ -99,7 +99,8 @@ int PMPI_File_read(MPI_File fh, void *buf, int count,MPI_Datatype datatype, MPI_
+   PASS_ZEROCOUNT(count)
+   const SmpiBenchGuard suspend_bench;
+   aid_t rank_traced = simgrid::s4u::this_actor::get_pid();
+-  TRACE_smpi_comm_in(rank_traced, __func__, new simgrid::instr::CpuTIData("IO - read", count * datatype->size()));
++  auto plop = "io-read " + std::string(fh->name());
++  TRACE_smpi_comm_in(rank_traced, __func__, new simgrid::instr::CpuTIData(plop, count * datatype->size()));
+   int ret = simgrid::smpi::File::read(fh, buf, count, datatype, status);
+   TRACE_smpi_comm_out(rank_traced);
+   return ret;
+@@ -124,7 +125,8 @@ int PMPI_File_write(MPI_File fh, const void *buf, int count,MPI_Datatype datatyp
+   PASS_ZEROCOUNT(count)
+   const SmpiBenchGuard suspend_bench;
+   aid_t rank_traced = simgrid::s4u::this_actor::get_pid();
+-  TRACE_smpi_comm_in(rank_traced, __func__, new simgrid::instr::CpuTIData("IO - write", count * datatype->size()));
++  auto plop = "io-write " + std::string(fh->name());
++  TRACE_smpi_comm_in(rank_traced, __func__, new simgrid::instr::CpuTIData(plop, count * datatype->size()));
+   int ret = simgrid::smpi::File::write(fh, const_cast<void*>(buf), count, datatype, status);
+   TRACE_smpi_comm_out(rank_traced);
+   return ret;
+diff --git a/src/smpi/include/smpi_file.hpp b/src/smpi/include/smpi_file.hpp
+index 60ab2fde22..c74e3e0855 100644
+--- a/src/smpi/include/smpi_file.hpp
++++ b/src/smpi/include/smpi_file.hpp
+@@ -44,7 +44,8 @@ class File : public F2C{
+   int flags() const;
+   MPI_Datatype etype() const;
+   MPI_Comm comm() const;
+-  std::string name() const override {return file_ ? std::string("MPI_File: ")+ std::string(file_->get_path()): std::string("MPI_File");}
++  // std::string name() const override {return file_ ? std::string("MPI_File: ")+ std::string(file_->get_path()): std::string("MPI_File");}
++  std::string name() const override {return file_ ? std::string(file_->get_path()): std::string("MPI_File");}
+ 
+   int sync();
+   int seek(MPI_Offset offset, int whence);
+#+END_EXAMPLE
+
+Alright, we can now integrate the information into the replayer
+
+#+BEGIN_EXAMPLE cpp
+static void action_io_write(const simgrid::xbt::ReplayAction& args)
+{
+    std::string filename     = args[2];
+    auto* file               = simgrid::s4u::File::open(filename, nullptr);
+    long int io_size = std::atof(args[3].c_str());
+    sg_size_t write = file->write(io_size);
+    XBT_INFO("Create a %llu bytes file named '%s' on /scratch : %ld", write, filename.c_str(), io_size);
+    file->close();
+}
+
+static void action_io_read(const simgrid::xbt::ReplayAction& args)
+{
+    std::string filename     = args[2];
+    auto* file               = simgrid::s4u::File::open(filename, nullptr);
+    long int io_size = std::atof(args[3].c_str());
+    sg_size_t read = file->read(io_size);
+    XBT_INFO("Read a %llu bytes file named '%s' on /scratch : %ld", read, filename.c_str(), io_size);
+    file->close();
+}
+#+END_EXAMPLE
+
+nice, we can write to the correct files now!
+
+Ok it would now be very nice if we can visualize the smpi run of ior and the replay of the trace.
+
+we will follow: https://simgrid.org/contrib/R_visualization.html
+
+We can generate the pajeng  trace:
+
+#+BEGIN_EXAMPLE
+nix develop .#expe --command smpirun -trace --cfg=tracing/filename:ior-trace-vizu -np 4 -hostfile hostfile_bob -platform hosts_with_disks.xml ./ior.bin -a MPIIO -t 1m -b 16m -s 16 -F -o "/scratch/testFile" -V
+#+END_EXAMPLE
+
+#+BEGIN_EXAMPLE R
+# Read the data
+library(tidyverse)
+library(pajengr)
+dta <- pajeng_read("ior-trace-vizu")
+
+# Manipulate the data
+dta$state %>%
+   # Remove some unnecessary columns for this example
+   select(-Type, -Imbrication) %>%
+   # Create the nice MPI rank and operations identifiers
+   mutate(Container = as.integer(gsub("rank-", "", Container)),
+          Value = gsub("^PMPI_", "MPI_", Value)) %>%
+   # Rename some columns so it can better fit MPI terminology
+   rename(Rank = Container,
+          Operation = Value) -> df.states
+
+# Draw the Gantt Chart
+df.states %>%
+   ggplot() +
+   # Each MPI operation is becoming a rectangle
+   geom_rect(aes(xmin=Start, xmax=End,
+                 ymin=Rank,  ymax=Rank + 1,
+                 fill=Operation)) +
+   # Cosmetics
+   xlab("Time [seconds]") +
+   ylab("Rank [count]") +
+   theme_bw(base_size=14) +
+   theme(
+     plot.margin = unit(c(0,0,0,0), "cm"),
+     legend.margin = margin(t = 0, unit='cm'),
+     panel.grid = element_blank(),
+     legend.position = "top",
+     legend.justification = "left",
+     legend.box.spacing = unit(0, "pt"),
+     legend.box.margin = margin(0,0,0,0),
+     legend.title = element_text(size=10)) -> plot
+
+ # Save the plot in a PNG file (dimensions in inches)
+ ggsave("ior-trace.png",
+        plot,
+        width = 10,
+        height = 3)
+#+END_EXAMPLE
+
+#+BEGIN_EXAMPLE
+nix develop .#rshell --command Rscript script.R
+#+END_EXAMPLE
+
+[[./ior-trace.png]]
+
+Well ok, let's now try with the replayer (i dont even know if it's possible)
+
+
+#+BEGIN_EXAMPLE
+nix develop .#dev --command smpirun -np 4 -platform hosts_with_disks.xml -hostfile hostfile_bob -trace --cfg=tracing/filename:ior-trace-replay -replay ior-trace-smpi2 myreplay
+#+END_EXAMPLE
+
+Let's change the Rscript to accept arguments
+
+#+BEGIN_SRC shell
+nix develop .#rshell --command Rscript script.R ior-trace-vizu ior-trace.png
+nix develop .#rshell --command Rscript script.R ior-trace-replay ior-replay.png
+#+END_SRC
+
+#+RESULTS:
+
+[[./ior-trace.png]]
+[[./ior-replay.png]]
+
+hummm nothing on the replay argh
+
+this is probably because we dont use MPI_File_read but read directly ...
+
+Ok, let's try to call MPI function in the replayer
+
+fuck i'll write a quick makefile i had enough
+
+
+Adrien had this for his expes
+
+#+BEGIN_EXAMPLE
+smpirun -replay trace_files.txt -np 16 -platform platform.xml -hostfile hostfile -trace -trace-file $@ --cfg=tracing/uncategorized:yes --cfg=host/model:ptask_L07
+#+END_EXAMPLE
+
+So, after some time fighting here is what i have done:
+
+- added tracing on MPI_File_Open and MPI_File_Close
+- in the replayer add a hashmap for remembering the open/closed files
+- in the replayer add support for open and close operation
+
+#+BEGIN_EXAMPLE diff
+diff --git a/src/smpi/bindings/smpi_pmpi_file.cpp b/src/smpi/bindings/smpi_pmpi_file.cpp
+index e8dfd51da4..292e417d3b 100644
+--- a/src/smpi/bindings/smpi_pmpi_file.cpp
++++ b/src/smpi/bindings/smpi_pmpi_file.cpp
+@@ -43,13 +43,21 @@ int PMPI_File_open(MPI_Comm comm, const char *filename, int amode, MPI_Info info
+   if (amode < 0)
+     return MPI_ERR_AMODE;
+   const SmpiBenchGuard suspend_bench;
++
++  aid_t rank_traced = simgrid::s4u::this_actor::get_pid();
++  auto plop = "io-open " + std::string(filename);
++  TRACE_smpi_comm_in(rank_traced, __func__, new simgrid::instr::CpuTIData(plop, 0));
+   *fh =  new simgrid::smpi::File(comm, filename, amode, info);
++  TRACE_smpi_comm_out(rank_traced);
++
+   if ((*fh)->size() != 0 && (amode & MPI_MODE_EXCL)){
+     delete fh;
+     return MPI_ERR_AMODE;
+   }
+   if(amode & MPI_MODE_APPEND)
+     (*fh)->seek(0,MPI_SEEK_END);
+   return MPI_SUCCESS;
+ }
+ 
+@@ -57,7 +65,11 @@ int PMPI_File_close(MPI_File *fh){
+   CHECK_NULL(2, MPI_ERR_ARG, fh)
+   CHECK_COLLECTIVE((*fh)->comm(), __func__)
+   const SmpiBenchGuard suspend_bench;
++  aid_t rank_traced = simgrid::s4u::this_actor::get_pid();
++  auto plop = "io-close " + std::string((*fh)->name());
++  TRACE_smpi_comm_in(rank_traced, __func__, new simgrid::instr::CpuTIData(plop, 0));
+   int ret = simgrid::smpi::File::close(fh);
++  TRACE_smpi_comm_out(rank_traced);
+   *fh = MPI_FILE_NULL;
+   return ret;
+ }
+@@ -99,7 +111,8 @@ int PMPI_File_read(MPI_File fh, void *buf, int count,MPI_Datatype datatype, MPI_
+   PASS_ZEROCOUNT(count)
+   const SmpiBenchGuard suspend_bench;
+   aid_t rank_traced = simgrid::s4u::this_actor::get_pid();
+-  TRACE_smpi_comm_in(rank_traced, __func__, new simgrid::instr::CpuTIData("IO - read", count * datatype->size()));
++  auto plop = "io-read " + std::string(fh->name());
++  TRACE_smpi_comm_in(rank_traced, __func__, new simgrid::instr::CpuTIData(plop, count * datatype->size()));
+   int ret = simgrid::smpi::File::read(fh, buf, count, datatype, status);
+   TRACE_smpi_comm_out(rank_traced);
+   return ret;
+@@ -124,7 +137,8 @@ int PMPI_File_write(MPI_File fh, const void *buf, int count,MPI_Datatype datatyp
+   PASS_ZEROCOUNT(count)
+   const SmpiBenchGuard suspend_bench;
+   aid_t rank_traced = simgrid::s4u::this_actor::get_pid();
+-  TRACE_smpi_comm_in(rank_traced, __func__, new simgrid::instr::CpuTIData("IO - write", count * datatype->size()));
++  auto plop = "io-write " + std::string(fh->name());
++  TRACE_smpi_comm_in(rank_traced, __func__, new simgrid::instr::CpuTIData(plop, count * datatype->size()));
+   int ret = simgrid::smpi::File::write(fh, const_cast<void*>(buf), count, datatype, status);
+   TRACE_smpi_comm_out(rank_traced);
+   return ret;
+diff --git a/src/smpi/include/smpi_file.hpp b/src/smpi/include/smpi_file.hpp
+index 60ab2fde22..c74e3e0855 100644
+--- a/src/smpi/include/smpi_file.hpp
++++ b/src/smpi/include/smpi_file.hpp
+@@ -44,7 +44,8 @@ class File : public F2C{
+   int flags() const;
+   MPI_Datatype etype() const;
+   MPI_Comm comm() const;
+-  std::string name() const override {return file_ ? std::string("MPI_File: ")+ std::string(file_->get_path()): std::string("MPI_File");}
++  // std::string name() const override {return file_ ? std::string("MPI_File: ")+ std::string(file_->get_path()): std::string("MPI_File");}
++  std::string name() const override {return file_ ? std::string(file_->get_path()): std::string("MPI_File");}
+ 
+   int sync();
+   int seek(MPI_Offset offset, int whence);
+#+END_EXAMPLE
+
+
+So now we get the same simualtion time between the ior in smpi and the replayer!!!!
+
+#+BEGIN_EXAMPLE
+nix develop .#expe --command smpirun --cfg=smpi/display-timing:yes -np 4 -hostfile hostfile_bob -platform hosts_with_disks.xml ./ior.bin -a MPIIO -t 1m -b 16m -s 16 -F -o "/scratch/testFile" -V
+
+[37.580965] [smpi_utils/INFO] Simulated time: 37.581 seconds
+#+END_EXAMPLE
+
+#+BEGIN_EXAMPLE
+nix develop .#expe --command smpirun -trace-ti --cfg=tracing/filename:ior-trace-smpi_open -np 4 -hostfile hostfile_bob -platform hosts_with_disks.xml ./ior.bin -a MPIIO -t 1m -b 16m -s 16 -F -o "/scratch/testFile" -V
+nix develop .#expe --command smpirun -np 4 -platform hosts_with_disks.xml -hostfile hostfile_bob --cfg=smpi/display-timing:yes -replay ior-trace-smpi_open myreplay
+
+[37.581108] [smpi_utils/INFO] Simulated time: 37.5811 seconds.
+#+END_EXAMPLE
+
+
+Pretty good!

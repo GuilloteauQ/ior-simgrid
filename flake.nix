@@ -18,7 +18,7 @@
       ]; };
     in
     {
-      packages.${system} = {
+      packages.${system} = rec {
         notes = pkgs.writeShellApplication {
           name = "notes";
           runtimeInputs = [ pkgs.emacs ];
@@ -31,16 +31,16 @@
         });
         ior-simgrid = pkgs.ior.overrideAttrs (finalAttrs: previousAttrs: {
             pname = "ior-simgrid";
-            propagatedBuildInputs = [ pkgs.simgrid ];
+            propagatedBuildInputs = [ simgrid ];
             configurePhase = ''
-              ./bootstrap && SMPI_PRETEND_CC=1 ./configure --prefix=$out MPICC=${pkgs.simgrid}/bin/smpicc CC=${pkgs.simgrid}/bin/smpicc
+              ./bootstrap && SMPI_PRETEND_CC=1 ./configure --prefix=$out MPICC=${simgrid}/bin/smpicc CC=${simgrid}/bin/smpicc
             '';
           });
       };
       devShells.${system} = {
-        default = pkgs.mkShell {
+        rshell = pkgs.mkShell {
           packages = [
-            qorn.ior-simgrid
+            # qorn.ior-simgrid
             myR
           ];
         };

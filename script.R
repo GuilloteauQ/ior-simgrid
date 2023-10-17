@@ -1,7 +1,12 @@
 # Read the data
 library(tidyverse)
 library(pajengr)
-dta <- pajeng_read("ior.trace")
+
+args = commandArgs(trailingOnly=TRUE)
+infile = args[1]
+outfile = args[2]
+
+dta <- pajeng_read(infile)
 
 # Manipulate the data
 dta$state %>%
@@ -36,7 +41,7 @@ df.states %>%
      legend.title = element_text(size=10)) -> plot
 
  # Save the plot in a PNG file (dimensions in inches)
- ggsave("smpi.pdf",
+ ggsave(outfile,
         plot,
         width = 10,
         height = 3)
