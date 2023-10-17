@@ -865,3 +865,10 @@ Pretty good!
 
 Let's write some "doc"
 
+ok let's now try with a different platform.
+
+we will have 4 nodes that all mount a disk on a remote host.
+
+then in the hostfile we will have the 4 nodes
+
+it is in scenario `remote-disk`

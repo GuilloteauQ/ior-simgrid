@@ -26,7 +26,7 @@ static void action_io_write(const simgrid::xbt::ReplayAction& args)
     auto* file               = opened_files[filename];
     long int io_size = std::atof(args[3].c_str());
     sg_size_t write = file->write(io_size);
-    XBT_INFO("Writing a %llu bytes file named '%s' on /scratch : %ld", write, filename.c_str(), io_size);
+    // XBT_INFO("Writing a %llu bytes file named '%s' on /scratch : %ld", write, filename.c_str(), io_size);
 }
 
 static void action_io_read(const simgrid::xbt::ReplayAction& args)
@@ -35,7 +35,7 @@ static void action_io_read(const simgrid::xbt::ReplayAction& args)
     auto* file               = opened_files[filename];
     long int io_size = std::atof(args[3].c_str());
     sg_size_t read = file->read(io_size);
-    XBT_INFO("Read a %llu bytes file named '%s' on /scratch : %ld", read, filename.c_str(), io_size);
+    // XBT_INFO("Read a %llu bytes file named '%s' on /scratch : %ld", read, filename.c_str(), io_size);
 }
 
 static void action_io_open(const simgrid::xbt::ReplayAction& args)
@@ -56,7 +56,7 @@ static void action_io_close(const simgrid::xbt::ReplayAction& args)
 static void compute(simgrid::xbt::ReplayAction& args)
 {
     double amount = std::stod(args[2]);
-    XBT_INFO("Executing %f", amount);
+    // XBT_INFO("Executing %f", amount);
     simgrid::s4u::this_actor::execute(amount);
 }
 
