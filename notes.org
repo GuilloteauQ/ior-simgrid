@@ -862,3 +862,6 @@ nix develop .#expe --command smpirun -np 4 -platform hosts_with_disks.xml -hostf
 
 
 Pretty good!
+
+Let's write some "doc"
+

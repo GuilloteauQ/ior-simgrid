@@ -10,40 +10,58 @@
 #include "xbt/str.h"
 #include <boost/algorithm/string/join.hpp>
 #include "simgrid/plugins/file_system.h"
+#include "simgrid/s4u.hpp"
 
 #include "xbt/log.h"
 XBT_LOG_NEW_DEFAULT_CATEGORY(replay_test, "Messages specific for this example");
 
+std::unordered_map<std::string, simgrid::s4u::File*> opened_files;
 
 
 /* This shows how to extend the trace format by adding a new kind of events.
    This function is registered through xbt_replay_action_register() below. */
 static void action_io_write(const simgrid::xbt::ReplayAction& args)
 {
-  /* Add your answer to the blah event here.
-     args is a strings array containing the blank-separated parameters found in the trace for this event instance. */
-    XBT_INFO("io_write!");
-    std::string filename     = "/scratch/testFile";
-    auto* file               = simgrid::s4u::File::open(filename, nullptr);
-    long int io_size = std::atof(args[2].c_str());
+    std::string filename     = args[2];
+    auto* file               = opened_files[filename];
+    long int io_size = std::atof(args[3].c_str());
     sg_size_t write = file->write(io_size);
-    XBT_INFO("Create a %llu bytes file named '%s' on /scratch : %ld", write, filename.c_str(), io_size);
-    file->close();
-
+    XBT_INFO("Writing a %llu bytes file named '%s' on /scratch : %ld", write, filename.c_str(), io_size);
 }
 
 static void action_io_read(const simgrid::xbt::ReplayAction& args)
 {
-  /* Add your answer to the blah event here.
-     args is a strings array containing the blank-separated parameters found in the trace for this event instance. */
-    XBT_INFO("io_read!");
-    std::string filename     = "/scratch/testFile";
-    auto* file               = simgrid::s4u::File::open(filename, nullptr);
-    long int io_size = std::atof(args[2].c_str());
+    std::string filename     = args[2];
+    auto* file               = opened_files[filename];
+    long int io_size = std::atof(args[3].c_str());
     sg_size_t read = file->read(io_size);
     XBT_INFO("Read a %llu bytes file named '%s' on /scratch : %ld", read, filename.c_str(), io_size);
-    file->close();
 }
+
+static void action_io_open(const simgrid::xbt::ReplayAction& args)
+{
+    std::string filename     = args[2];
+    auto* file               = simgrid::s4u::File::open(filename, nullptr);
+    opened_files[filename] = file;
+}
+
+static void action_io_close(const simgrid::xbt::ReplayAction& args)
+{
+    std::string filename     = args[2];
+    auto* file               = opened_files[filename];
+    file->close();
+    opened_files.erase(filename);
+}
+
+static void compute(simgrid::xbt::ReplayAction& args)
+{
+    double amount = std::stod(args[2]);
+    XBT_INFO("Executing %f", amount);
+    simgrid::s4u::this_actor::execute(amount);
+}
+
+
+
 int main(int argc, char* argv[])
 {
   const auto* properties = simgrid::s4u::Actor::self()->get_properties();
@@ -65,6 +83,9 @@ int main(int argc, char* argv[])
   /* Connect your callback function to the "blah" event in the trace files */
   xbt_replay_action_register("io-write", action_io_write);
   xbt_replay_action_register("io-read", action_io_read);
+  xbt_replay_action_register("io-open", action_io_open);
+  xbt_replay_action_register("io-close", action_io_close);
+  // xbt_replay_action_register("compute", compute);
 
   /* The regular run of the replayer */
   if (shared_trace != nullptr)

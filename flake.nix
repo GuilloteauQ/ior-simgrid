@@ -26,6 +26,21 @@
             emacs -q -l ./.init.el notes.org &
           '';
         };
+	replayer = pkgs.stdenv.mkDerivation {
+	  name = "replayer";
+	  src = ./replay.cpp;
+	  buildInputs = [ simgrid ];
+	  unpackPhase = ''
+	   echo skip
+	  '';
+	  buildPhase = ''
+	    smpicxx -o myreplay $src -std=c++17
+	  '';
+	  installPhase = ''
+	    mkdir -p $out/bin
+	    cp myreplay $out/bin
+	  '';
+	};
         simgrid = pkgs.simgrid.overrideAttrs (finalAttrs: previousAttrs: {
             patches = [ ./test.patch ];
         });
@@ -47,9 +62,11 @@
         expe = pkgs.mkShell {
           packages = [
             self.packages.${system}.ior-simgrid
+	    self.packages.${system}.replayer
           ];
           shellHook = ''
             ln -sf ${self.packages.${system}.ior-simgrid}/bin/ior ior.bin
+            ln -sf ${self.packages.${system}.replayer}/bin/myreplay replay.bin
           '';
         };
         dev = pkgs.mkShell {
