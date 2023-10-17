@@ -872,3 +872,19 @@ we will have 4 nodes that all mount a disk on a remote host.
 then in the hostfile we will have the 4 nodes
 
 it is in scenario `remote-disk`
+
+ok but now when i try with a single file in ior the replayer does not work.
+
+I suppose that is just that we do not trace enough information to replay properly.
+
+so we also need to trace:
+
+- PMPI_File_delete
+- PMPI_File_seek_*
+- PMPI_File_get_position_*
+
+  Also, if we remove the `-V` flag of IOR (useFileView – use MPI_File_set_view), the replayer crashed because we use different finction (PMPI_File_read_at for example)
+  this needs a tiny bit of work, but should be ok
+  we just need to also pass the information about the offset
+
+  We'll see next time
