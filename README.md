@@ -13,5 +13,5 @@ nix develop .#expe --command smpirun -trace-ti --cfg=tracing/filename:ior-trace-
 ## Replay the trace
 
 ```
-nix develop .#expe --command smpirun -np 4 -platform hosts_with_disks.xml -hostfile hostfile_bob --cfg=smpi/display-timing:yes -replay ior-trace-smpi_open replay.bin
+nix develop .#expe --command smpirun -np 4 -platform hosts_with_disks.xml -hostfile hostfile_bob --cfg=smpi/display-timing:yes -replay ior-trace-smpi replay.bin
 ```
