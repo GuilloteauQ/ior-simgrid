@@ -888,3 +888,19 @@ so we also need to trace:
   we just need to also pass the information about the offset
 
   We'll see next time
+
+* <2023-10-19 Thu>
+
+ok let's implement all the operations remaining
+
+for the file_read_at, the method is MPI_SEEK_SET
+
+Ok implemented the replay to remove the `-V` of IOR
+
+There are still some issue witht the single file...
+
+It is not very clear what the issue is with a single file
+
+there are probably some weird stuff going on with seeks
+
+but otherwise, it seems to work good!
